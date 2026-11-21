@@ -1,0 +1,70 @@
+name: Build APK Sewa Barang
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'proyek.zip'
+      - '.github/workflows/proyek.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil kode repo
+        uses: actions/checkout@v4
+
+      - name: Ekstrak proyek.zip
+        run: |
+          set -e
+          if [ ! -f proyek.zip ]; then
+            echo "proyek.zip tidak ditemukan di root repo"; exit 1
+          fi
+          rm -rf hasil_ekstrak && mkdir hasil_ekstrak
+          unzip -q proyek.zip -d hasil_ekstrak
+          if [ -f hasil_ekstrak/settings.gradle ]; then
+            echo "BUILD_DIR=hasil_ekstrak" >> "$GITHUB_ENV"
+          else
+            d=$(dirname "$(find hasil_ekstrak -maxdepth 3 -name settings.gradle | head -n 1)")
+            echo "BUILD_DIR=$d" >> "$GITHUB_ENV"
+          fi
+
+      - name: Pasang Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setujui lisensi Android SDK
+        run: yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+
+      - name: Pasang Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        working-directory: ${{ env.BUILD_DIR }}
+        run: gradle assembleRelease --stacktrace
+
+      - name: Siapkan berkas APK
+        run: |
+          mkdir -p keluaran
+          cp "${BUILD_DIR}/app/build/outputs/apk/release/app-release.apk" keluaran/SewaBarang.apk
+
+      - name: Simpan APK sebagai artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SewaBarang-APK
+          path: keluaran/SewaBarang.apk
+
+      - name: Terbitkan APK di Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Sewa Barang build ${{ github.run_number }}
+          files: keluaran/SewaBarang.apk
